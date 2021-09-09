@@ -9,15 +9,19 @@ import re
 import sys
 import subprocess
 import shutil
+from typing import Counter
 import webbrowser as wb
+import pickle
+import sqlite3
 
 from functools import partial
 from collections import defaultdict
 
 try:
-    from PyQt5.QtGui import *
-    from PyQt5.QtCore import *
-    from PyQt5.QtWidgets import *
+    from PySide2.QtGui import *
+    from PySide2.QtCore import *
+    from PySide2.QtWidgets import *
+    from PySide2.QtSql import *
 except ImportError:
     # needed for py3+qt4
     # Ref:
@@ -26,8 +30,8 @@ except ImportError:
     if sys.version_info.major >= 3:
         import sip
         sip.setapi('QVariant', 2)
-    from PyQt4.QtGui import *
-    from PyQt4.QtCore import *
+    from PyQt5.QtGui import *
+    from PyQt5.QtCore import *
 
 from libs.combobox import ComboBox
 from libs.resources import *
@@ -100,8 +104,9 @@ class MainWindow(QMainWindow, WindowMixin):
         self.dir_name = None
         self.label_hist = []
         self.last_open_dir = None
-        self.cur_img_idx = 0
+        self.cur_img_idx = 1
         self.img_count = 1
+        self.num = 1
 
         # Whether we need to save or not.
         self.dirty = False
@@ -859,6 +864,7 @@ class MainWindow(QMainWindow, WindowMixin):
                         difficult=s.difficult)
 
         shapes = [format_shape(shape) for shape in self.canvas.shapes]
+        self.data = shapes
         # Can add different annotation formats here
         try:
             if self.label_file_format == LabelFileFormat.PASCAL_VOC:
@@ -1041,7 +1047,7 @@ class MainWindow(QMainWindow, WindowMixin):
         for item, shape in self.items_to_shapes.items():
             item.setCheckState(Qt.Checked if value else Qt.Unchecked)
 
-    def load_file(self, file_path=None):
+    def load_file(self, file_data, file_path=None):
         """Load the specified file, or the last opened file if None."""
         self.reset_state()
         self.canvas.setEnabled(False)
@@ -1087,8 +1093,8 @@ class MainWindow(QMainWindow, WindowMixin):
                 self.label_file = None
                 self.canvas.verified = False
 
-            if isinstance(self.image_data, QImage):
-                image = self.image_data
+            if isinstance(file_data, QImage):
+                image = file_data
             else:
                 image = QImage.fromData(self.image_data)
             if image.isNull():
@@ -1126,9 +1132,11 @@ class MainWindow(QMainWindow, WindowMixin):
         """
         Converts image counter to string representation.
         """
-        return '[{} / {}]'.format(self.cur_img_idx + 1, self.img_count)
+        return '[{} / {}]'.format(self.cur_img_idx, self.img_count)
 
+    
     def show_bounding_box_from_annotation_file(self, file_path):
+        self.default_save_dir  = self.initialpath
         if self.default_save_dir is not None:
             basename = os.path.basename(os.path.splitext(file_path)[0])
             xml_path = os.path.join(self.default_save_dir, basename + XML_EXT)
@@ -1139,19 +1147,16 @@ class MainWindow(QMainWindow, WindowMixin):
             PascalXML > YOLO
             """
             if os.path.isfile(xml_path):
-                self.load_pascal_xml_by_filename(xml_path)
+                self.load_create_ml_json_by_filename()
             elif os.path.isfile(txt_path):
-                self.load_yolo_txt_by_filename(txt_path)
+                self.load_create_ml_json_by_filename()
             elif os.path.isfile(json_path):
-                self.load_create_ml_json_by_filename(json_path, file_path)
+                self.load_create_ml_json_by_filename()
+            else:
+                self.load_create_ml_json_by_filename()
 
         else:
-            xml_path = os.path.splitext(file_path)[0] + XML_EXT
-            txt_path = os.path.splitext(file_path)[0] + TXT_EXT
-            if os.path.isfile(xml_path):
-                self.load_pascal_xml_by_filename(xml_path)
-            elif os.path.isfile(txt_path):
-                self.load_yolo_txt_by_filename(txt_path)
+            self.load_create_ml_json_by_filename()
 
     def resizeEvent(self, event):
         if self.canvas and not self.image.isNull()\
@@ -1239,20 +1244,36 @@ class MainWindow(QMainWindow, WindowMixin):
         return images
 
     def change_save_dir_dialog(self, _value=False):
-        if self.default_save_dir is not None:
-            path = ustr(self.default_save_dir)
-        else:
-            path = '.'
+        dialog = QFileDialog()
+        dialog.setWindowTitle(f"Select db initial picture")
+        dialog.setNameFilter('db (*.db)')
+        dialog.setOption(QFileDialog.DontUseNativeDialog)
+        if dialog.exec_() == QDialog.Accepted:
+            self.initialpath = dialog.selectedFiles()[0]
+            self.db = QSqlDatabase.addDatabase("QSQLITE")
+            self.db.setDatabaseName(self.initialpath)
+            if not self.db.open():
+                print("Failed to connect to database")
 
-        dir_path = ustr(QFileDialog.getExistingDirectory(self,
-                                                         '%s - Save annotations to the directory' % __appname__, path,  QFileDialog.ShowDirsOnly
-                                                         | QFileDialog.DontResolveSymlinks))
+            sql = QSqlQuery()
+            self.value_dist = {}
+            if sql.exec_('select id,image from detection'):
+                id_index = sql.record().indexOf('id')
+                image_index = sql.record().indexOf('image')
+                while sql.next():
+                    id = sql.value(id_index)
+                    image = sql.value(image_index)
+                    self.value_dist[id] = image
 
-        if dir_path is not None and len(dir_path) > 1:
-            self.default_save_dir = dir_path
+                self.img_count = len(Counter(self.value_dist))
+                self.cur_img_idx = 1
 
-        self.statusBar().showMessage('%s . Annotation will be saved to %s' %
-                                     ('Change saved folder', self.default_save_dir))
+                img = QPixmap()
+                img.loadFromData(self.value_dist[1])
+                
+                im = img.toImage()
+                self.load_file(im)
+        self.statusBar().showMessage(f'Picture storage has been transferred to the {self.initialpath}')
         self.statusBar().show()
 
     def open_annotation_dialog(self, _value=False):
@@ -1324,56 +1345,29 @@ class MainWindow(QMainWindow, WindowMixin):
 
     def open_prev_image(self, _value=False):
         # Proceeding prev image without dialog if having any label
-        if self.auto_saving.isChecked():
-            if self.default_save_dir is not None:
-                if self.dirty is True:
-                    self.save_file()
-            else:
-                self.change_save_dir_dialog()
-                return
-
-        if not self.may_continue():
-            return
-
-        if self.img_count <= 0:
-            return
-
-        if self.file_path is None:
-            return
-
-        if self.cur_img_idx - 1 >= 0:
-            self.cur_img_idx -= 1
-            filename = self.m_img_list[self.cur_img_idx]
-            if filename:
-                self.load_file(filename)
+        if self.value_dist:
+            if self.num - len(Counter(self.value_dist)) == 1:
+                self.num = len(Counter(self.value_dist))
+            if self.num != 1:
+                img = QPixmap()
+                self.num -= 1
+                self.cur_img_idx = self.num
+                img.loadFromData(self.value_dist[self.num])
+                im = img.toImage()
+                self.load_file(im)
 
     def open_next_image(self, _value=False):
         # Proceeding prev image without dialog if having any label
-        if self.auto_saving.isChecked():
-            if self.default_save_dir is not None:
-                if self.dirty is True:
-                    self.save_file()
-            else:
-                self.change_save_dir_dialog()
-                return
-
-        if not self.may_continue():
-            return
-
-        if self.img_count <= 0:
-            return
-
-        filename = None
-        if self.file_path is None:
-            filename = self.m_img_list[0]
-            self.cur_img_idx = 0
-        else:
-            if self.cur_img_idx + 1 < self.img_count:
-                self.cur_img_idx += 1
-                filename = self.m_img_list[self.cur_img_idx]
-
-        if filename:
-            self.load_file(filename)
+        if self.value_dist:
+            
+            if  self.num <= len(Counter(self.value_dist)):
+                img = QPixmap()
+                self.num += 1
+                if self.num < len(Counter(self.value_dist))+1:
+                    img.loadFromData(self.value_dist[self.num])
+                    self.cur_img_idx = self.num
+                    im = img.toImage()
+                    self.load_file(im)
 
     def open_file(self, _value=False):
         if not self.may_continue():
@@ -1392,10 +1386,12 @@ class MainWindow(QMainWindow, WindowMixin):
     def save_file(self, _value=False):
         if self.default_save_dir is not None and len(ustr(self.default_save_dir)):
             if self.file_path:
+                image_file_dir = os.path.dirname(self.file_path)
                 image_file_name = os.path.basename(self.file_path)
                 saved_file_name = os.path.splitext(image_file_name)[0]
-                saved_path = os.path.join(ustr(self.default_save_dir), saved_file_name)
-                self._save_file(saved_path)
+                saved_path = os.path.join(image_file_dir, saved_file_name)
+                self._save_file(saved_path if self.label_file
+                                else self.save_file_dialog(remove_ext=False))
         else:
             image_file_dir = os.path.dirname(self.file_path)
             image_file_name = os.path.basename(self.file_path)
@@ -1409,22 +1405,15 @@ class MainWindow(QMainWindow, WindowMixin):
         self._save_file(self.save_file_dialog())
 
     def save_file_dialog(self, remove_ext=True):
-        caption = '%s - Choose File' % __appname__
-        filters = 'File (*%s)' % LabelFile.suffix
-        open_dialog_path = self.current_path()
-        dlg = QFileDialog(self, caption, open_dialog_path, filters)
-        dlg.setDefaultSuffix(LabelFile.suffix[1:])
-        dlg.setAcceptMode(QFileDialog.AcceptSave)
-        filename_without_extension = os.path.splitext(self.file_path)[0]
-        dlg.selectFile(filename_without_extension)
-        dlg.setOption(QFileDialog.DontUseNativeDialog, False)
-        if dlg.exec_():
-            full_file_path = ustr(dlg.selectedFiles()[0])
-            if remove_ext:
-                return os.path.splitext(full_file_path)[0]  # Return file path without the extension.
-            else:
-                return full_file_path
-        return ''
+        self._save_file(self.initialpath)
+        self.bottle = ' '.join([bin(ord(c)).replace('0b', '') for c in str(self.data)])
+        sql = "UPDATE detection SET jsondata='%s' WHERE id=%s" % (self.bottle,self.num)
+        conn = sqlite3.connect(self.initialpath)
+        cur = conn.cursor()
+        cur.execute(sql)
+        conn.commit()
+        cur.close()
+        conn.close()
 
     def _save_file(self, annotation_file_path):
         if annotation_file_path and self.save_labels(annotation_file_path):
@@ -1556,22 +1545,25 @@ class MainWindow(QMainWindow, WindowMixin):
         self.set_format(FORMAT_YOLO)
         t_yolo_parse_reader = YoloReader(txt_path, self.image)
         shapes = t_yolo_parse_reader.get_shapes()
-        print(shapes)
         self.load_labels(shapes)
         self.canvas.verified = t_yolo_parse_reader.verified
 
-    def load_create_ml_json_by_filename(self, json_path, file_path):
-        if self.file_path is None:
-            return
-        if os.path.isfile(json_path) is False:
-            return
-
-        self.set_format(FORMAT_CREATEML)
-
-        create_ml_parse_reader = CreateMLReader(json_path, file_path)
-        shapes = create_ml_parse_reader.get_shapes()
-        self.load_labels(shapes)
-        self.canvas.verified = create_ml_parse_reader.verified
+    def load_create_ml_json_by_filename(self):
+        conn = sqlite3.connect(self.initialpath)
+        cursor = conn.cursor()
+        cursor.execute('select jsondata from detection where id=%s' % self.num)
+        values = cursor.fetchall()
+        self.shapes = []
+        try:
+            for v in values:
+                value = ''.join([chr(i) for i in [int(b, 2) for b in v[0].split(' ')]])
+                for s in eval(value):
+                    self.shapes.append((s['label'], s['points'], None, None, True))
+                self.load_labels(self.shapes)
+        except:
+            pass
+        cursor.close()
+        conn.close()
 
     def copy_previous_bounding_boxes(self):
         current_index = self.m_img_list.index(self.file_path)
