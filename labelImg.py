@@ -1273,7 +1273,7 @@ class MainWindow(QMainWindow, WindowMixin):
                 
                 im = img.toImage()
                 self.load_file(im)
-        self.statusBar().showMessage(f'Picture storage has been transferred to the {self.initialpath}')
+        self.statusBar().showMessage(f'将在{self.initialpath}下操作')
         self.statusBar().show()
 
     def open_annotation_dialog(self, _value=False):
@@ -1293,6 +1293,9 @@ class MainWindow(QMainWindow, WindowMixin):
             self.load_pascal_xml_by_filename(filename)
 
     def open_dir_dialog(self, _value=False, dir_path=None, silent=False):
+        self.statusBar().showMessage('该功能已禁用')
+        self.statusBar().show()
+        return
         if not self.may_continue():
             return
 
@@ -1345,31 +1348,39 @@ class MainWindow(QMainWindow, WindowMixin):
 
     def open_prev_image(self, _value=False):
         # Proceeding prev image without dialog if having any label
-        if self.value_dist:
-            if self.num - len(Counter(self.value_dist)) == 1:
-                self.num = len(Counter(self.value_dist))
-            if self.num != 1:
-                img = QPixmap()
-                self.num -= 1
-                self.cur_img_idx = self.num
-                img.loadFromData(self.value_dist[self.num])
-                im = img.toImage()
-                self.load_file(im)
+        try:
+            if self.value_dist:
+                if self.num - len(Counter(self.value_dist)) == 1:
+                    self.num = len(Counter(self.value_dist))
+                if self.num != 1:
+                    img = QPixmap()
+                    self.num -= 1
+                    self.cur_img_idx = self.num
+                    img.loadFromData(self.value_dist[self.num])
+                    im = img.toImage()
+                    self.load_file(im)
+        except:
+            pass
 
     def open_next_image(self, _value=False):
         # Proceeding prev image without dialog if having any label
-        if self.value_dist:
-            
-            if  self.num <= len(Counter(self.value_dist)):
-                img = QPixmap()
-                self.num += 1
-                if self.num < len(Counter(self.value_dist))+1:
-                    img.loadFromData(self.value_dist[self.num])
-                    self.cur_img_idx = self.num
-                    im = img.toImage()
-                    self.load_file(im)
+        try:
+            if self.value_dist:
+                if  self.num <= len(Counter(self.value_dist)):
+                    img = QPixmap()
+                    self.num += 1
+                    if self.num < len(Counter(self.value_dist))+1:
+                        img.loadFromData(self.value_dist[self.num])
+                        self.cur_img_idx = self.num
+                        im = img.toImage()
+                        self.load_file(im)
+        except:
+            pass
 
     def open_file(self, _value=False):
+        self.statusBar().showMessage('该功能已禁用')
+        self.statusBar().show()
+        return
         if not self.may_continue():
             return
         path = os.path.dirname(ustr(self.file_path)) if self.file_path else '.'
