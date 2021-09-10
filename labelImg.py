@@ -106,7 +106,6 @@ class MainWindow(QMainWindow, WindowMixin):
         self.last_open_dir = None
         self.cur_img_idx = 1
         self.img_count = 1
-        self.num = 1
 
         # Whether we need to save or not.
         self.dirty = False
@@ -737,10 +736,18 @@ class MainWindow(QMainWindow, WindowMixin):
 
     # Tzutalin 20160906 : Add file list and dock to move faster
     def file_item_double_clicked(self, item=None):
-        self.cur_img_idx = self.m_img_list.index(ustr(item.text()))
-        filename = self.m_img_list[self.cur_img_idx]
+        self.cur_img_idx = int(ustr(item.text()))
+        filename = self.value_dist.get(int(ustr(item.text())),'')
         if filename:
-            self.load_file(filename)
+            img = QPixmap()
+            img.loadFromData(filename)
+            im = img.toImage()
+            self.load_create_ml_json_by_filename(self.cur_img_idx)
+            self.load_file(im)
+        for imgPath in range(1,self.img_count+1):
+            item = QListWidgetItem(str(imgPath))
+            self.file_list_widget.addItem(item)
+        
 
     # Add chris
     def button_state(self, item=None):
@@ -1147,16 +1154,16 @@ class MainWindow(QMainWindow, WindowMixin):
             PascalXML > YOLO
             """
             if os.path.isfile(xml_path):
-                self.load_create_ml_json_by_filename()
+                self.load_create_ml_json_by_filename(self.cur_img_idx)
             elif os.path.isfile(txt_path):
-                self.load_create_ml_json_by_filename()
+                self.load_create_ml_json_by_filename(self.cur_img_idx)
             elif os.path.isfile(json_path):
-                self.load_create_ml_json_by_filename()
+                self.load_create_ml_json_by_filename(self.cur_img_idx)
             else:
-                self.load_create_ml_json_by_filename()
+                self.load_create_ml_json_by_filename(self.cur_img_idx)
 
         else:
-            self.load_create_ml_json_by_filename()
+            self.load_create_ml_json_by_filename(self.cur_img_idx)
 
     def resizeEvent(self, event):
         if self.canvas and not self.image.isNull()\
@@ -1257,6 +1264,7 @@ class MainWindow(QMainWindow, WindowMixin):
 
             sql = QSqlQuery()
             self.value_dist = {}
+            self.file_list_widget.clear()
             if sql.exec_('select id,image from detection'):
                 id_index = sql.record().indexOf('id')
                 image_index = sql.record().indexOf('image')
@@ -1264,7 +1272,7 @@ class MainWindow(QMainWindow, WindowMixin):
                     id = sql.value(id_index)
                     image = sql.value(image_index)
                     self.value_dist[id] = image
-
+                    
                 self.img_count = len(Counter(self.value_dist))
                 self.cur_img_idx = 1
 
@@ -1273,6 +1281,9 @@ class MainWindow(QMainWindow, WindowMixin):
                 
                 im = img.toImage()
                 self.load_file(im)
+                for imgPath in range(1,self.img_count+1):
+                    item = QListWidgetItem(str(imgPath))
+                    self.file_list_widget.addItem(item)
         self.statusBar().showMessage(f'将在{self.initialpath}下操作')
         self.statusBar().show()
 
@@ -1350,32 +1361,38 @@ class MainWindow(QMainWindow, WindowMixin):
         # Proceeding prev image without dialog if having any label
         try:
             if self.value_dist:
-                if self.num - len(Counter(self.value_dist)) == 1:
-                    self.num = len(Counter(self.value_dist))
-                if self.num != 1:
+                if self.cur_img_idx - len(Counter(self.value_dist)) == 1:
+                    self.cur_img_idx = len(Counter(self.value_dist))
+                if self.cur_img_idx != 1:
                     img = QPixmap()
-                    self.num -= 1
-                    self.cur_img_idx = self.num
-                    img.loadFromData(self.value_dist[self.num])
+                    self.cur_img_idx -= 1
+                    self.cur_img_idx = self.cur_img_idx
+                    img.loadFromData(self.value_dist[self.cur_img_idx])
                     im = img.toImage()
                     self.load_file(im)
         except:
             pass
+        for imgPath in range(1,self.img_count+1):
+            item = QListWidgetItem(str(imgPath))
+            self.file_list_widget.addItem(item)
 
     def open_next_image(self, _value=False):
         # Proceeding prev image without dialog if having any label
         try:
             if self.value_dist:
-                if  self.num <= len(Counter(self.value_dist)):
+                if  self.cur_img_idx <= len(Counter(self.value_dist)):
                     img = QPixmap()
-                    self.num += 1
-                    if self.num < len(Counter(self.value_dist))+1:
-                        img.loadFromData(self.value_dist[self.num])
-                        self.cur_img_idx = self.num
+                    self.cur_img_idx += 1
+                    if self.cur_img_idx < len(Counter(self.value_dist))+1:
+                        img.loadFromData(self.value_dist[self.cur_img_idx])
+                        self.cur_img_idx = self.cur_img_idx
                         im = img.toImage()
                         self.load_file(im)
         except:
             pass
+        for imgPath in range(1,self.img_count+1):
+            item = QListWidgetItem(str(imgPath))
+            self.file_list_widget.addItem(item)
 
     def open_file(self, _value=False):
         self.statusBar().showMessage('该功能已禁用')
@@ -1418,7 +1435,7 @@ class MainWindow(QMainWindow, WindowMixin):
     def save_file_dialog(self, remove_ext=True):
         self._save_file(self.initialpath)
         self.bottle = ' '.join([bin(ord(c)).replace('0b', '') for c in str(self.data)])
-        sql = "UPDATE detection SET jsondata='%s' WHERE id=%s" % (self.bottle,self.num)
+        sql = "UPDATE detection SET jsondata='%s' WHERE id=%s" % (self.bottle,self.cur_img_idx)
         conn = sqlite3.connect(self.initialpath)
         cur = conn.cursor()
         cur.execute(sql)
@@ -1559,10 +1576,10 @@ class MainWindow(QMainWindow, WindowMixin):
         self.load_labels(shapes)
         self.canvas.verified = t_yolo_parse_reader.verified
 
-    def load_create_ml_json_by_filename(self):
+    def load_create_ml_json_by_filename(self,num):
         conn = sqlite3.connect(self.initialpath)
         cursor = conn.cursor()
-        cursor.execute('select jsondata from detection where id=%s' % self.num)
+        cursor.execute('select jsondata from detection where id=%s' % num)
         values = cursor.fetchall()
         self.shapes = []
         try:
