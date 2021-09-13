@@ -1257,6 +1257,13 @@ class MainWindow(QMainWindow, WindowMixin):
         dialog.setOption(QFileDialog.DontUseNativeDialog)
         if dialog.exec_() == QDialog.Accepted:
             self.initialpath = dialog.selectedFiles()[0]
+            try:
+                conn = sqlite3.connect(self.initialpath)
+                cursor = conn.cursor()
+                cursor.execute('select jsondata from detection where id=1')
+            except:
+                add = "ALTER TABLE detection ADD jsondata blob"
+                cursor.execute(add)
             self.db = QSqlDatabase.addDatabase("QSQLITE")
             self.db.setDatabaseName(self.initialpath)
             if not self.db.open():
@@ -1272,6 +1279,12 @@ class MainWindow(QMainWindow, WindowMixin):
                     id = sql.value(id_index)
                     image = sql.value(image_index)
                     self.value_dist[id] = image
+                # conn = sqlite3.connect(self.initialpath)
+                # cur = conn.cursor()
+                # add = "ALTER TABLE detection ADD jsondata blob"
+                # cur.execute(add)
+
+                sql.exec_('ALTER TABLE detection ADD jsondata blob')
                     
                 self.img_count = len(Counter(self.value_dist))
                 self.cur_img_idx = 1
