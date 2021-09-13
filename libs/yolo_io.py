@@ -29,6 +29,7 @@ class YOLOWriter:
         self.box_list.append(bnd_box)
 
     def bnd_box_to_yolo_line(self, box, class_list=[]):
+        return
         x_min = box['xmin']
         x_max = box['xmax']
         y_min = box['ymin']
@@ -50,7 +51,7 @@ class YOLOWriter:
         return class_index, x_center, y_center, w, h
 
     def save(self, class_list=[], target_file=None):
-
+        return
         out_file = None  # Update yolo .txt
         out_class_file = None   # Update class list .txt
 
