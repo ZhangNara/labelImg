@@ -872,6 +872,7 @@ class MainWindow(QMainWindow, WindowMixin):
 
         shapes = [format_shape(shape) for shape in self.canvas.shapes]
         self.data = shapes
+        
         # Can add different annotation formats here
         try:
             if self.label_file_format == LabelFileFormat.PASCAL_VOC:
@@ -1279,12 +1280,6 @@ class MainWindow(QMainWindow, WindowMixin):
                     id = sql.value(id_index)
                     image = sql.value(image_index)
                     self.value_dist[id] = image
-                # conn = sqlite3.connect(self.initialpath)
-                # cur = conn.cursor()
-                # add = "ALTER TABLE detection ADD jsondata blob"
-                # cur.execute(add)
-
-                sql.exec_('ALTER TABLE detection ADD jsondata blob')
                     
                 self.img_count = len(Counter(self.value_dist))
                 self.cur_img_idx = 1
@@ -1297,8 +1292,13 @@ class MainWindow(QMainWindow, WindowMixin):
                 for imgPath in range(1,self.img_count+1):
                     item = QListWidgetItem(str(imgPath))
                     self.file_list_widget.addItem(item)
-        self.statusBar().showMessage(f'将在{self.initialpath}下操作')
-        self.statusBar().show()
+        else:
+            pass
+        try:
+            self.statusBar().showMessage(f'将在{self.initialpath}下操作')
+            self.statusBar().show()
+        except:
+            pass
 
     def open_annotation_dialog(self, _value=False):
         if self.file_path is None:
