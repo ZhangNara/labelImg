@@ -1264,7 +1264,10 @@ class MainWindow(QMainWindow, WindowMixin):
                 cursor.execute('select jsondata from detection where id=1')
             except:
                 add = "ALTER TABLE detection ADD jsondata blob"
-                cursor.execute(add)
+                try:
+                    cursor.execute(add)
+                except:
+                    pass
             self.db = QSqlDatabase.addDatabase("QSQLITE")
             self.db.setDatabaseName(self.initialpath)
             if not self.db.open():
